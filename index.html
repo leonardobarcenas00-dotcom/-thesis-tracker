@@ -1,0 +1,1677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thesis Tracker</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #f7f6f3; min-height: 100vh; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+
+// ══════════════════════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════════════════════
+
+const STORAGE_KEY       = "thesis-tracker-v11";
+const SCAN_LOG_KEY      = "thesis-tracker-scan-log-v11";
+const THRESHOLD_KEY     = "thesis-tracker-threshold";
+const APIKEY_KEY        = "thesis-tracker-gemini-key";
+const AUTO_SCAN_DEFAULT = 30;
+const MODEL_VERSION     = "gemini-2.5-flash-preview-05-20";
+const GEMINI_ENDPOINT   = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_VERSION}:generateContent`;
+
+const CATEGORIES = ["Markets","Macro","Tech","Geopolitics","Personal"];
+const THESIS_ST  = ["Active","Confirmed","Invalidated","On Hold"];
+const ASSUME_ST  = ["Holding","Uncertain","Broken"];
+const SORT_OPTS  = ["Score","Newest","Oldest","Title","Stale"];
+
+const CAT_META = {
+  Markets:    {accent:"#1976d2",bg:"rgba(25,118,210,0.06)",  border:"rgba(25,118,210,0.18)"},
+  Macro:      {accent:"#7b3fc4",bg:"rgba(123,63,196,0.06)",  border:"rgba(123,63,196,0.18)"},
+  Tech:       {accent:"#07896a",bg:"rgba(7,137,106,0.06)",   border:"rgba(7,137,106,0.18)"},
+  Geopolitics:{accent:"#c45e10",bg:"rgba(196,94,16,0.06)",   border:"rgba(196,94,16,0.18)"},
+  Personal:   {accent:"#9a6c00",bg:"rgba(154,108,0,0.06)",   border:"rgba(154,108,0,0.18)"},
+};
+const STATUS_META = {
+  Active:      {color:"#2a2520",bg:"rgba(0,0,0,0.04)",     border:"rgba(0,0,0,0.14)"},
+  Confirmed:   {color:"#07896a",bg:"rgba(7,137,106,0.07)", border:"rgba(7,137,106,0.22)"},
+  Invalidated: {color:"#c03030",bg:"rgba(192,48,48,0.07)", border:"rgba(192,48,48,0.22)"},
+  "On Hold":   {color:"#9a6c00",bg:"rgba(154,108,0,0.07)", border:"rgba(154,108,0,0.22)"},
+};
+const ASM_META = {
+  Holding:  {color:"#07896a",symbol:"▲",weight:1.0},
+  Uncertain:{color:"#b07800",symbol:"◆",weight:0.45},
+  Broken:   {color:"#c03030",symbol:"▼",weight:0.0},
+};
+
+const T = {
+  bg:"#f7f6f3",bgAlt:"#f0efe9",surface:"#ffffff",
+  border:"rgba(0,0,0,0.09)",borderMid:"rgba(0,0,0,0.14)",
+  text:"#1c1914",textMid:"#6b6258",textDim:"#aaa098",
+  accent:"#07896a",accentBg:"rgba(7,137,106,0.07)",accentBorder:"rgba(7,137,106,0.22)",
+  warn:"#b07800",warnBg:"rgba(176,120,0,0.07)",warnBorder:"rgba(176,120,0,0.22)",
+  danger:"#c03030",dangerBg:"rgba(192,48,48,0.07)",dangerBorder:"rgba(192,48,48,0.22)",
+  serif:"'Fraunces',Georgia,serif",mono:"'JetBrains Mono',monospace",
+  shadow:"0 1px 3px rgba(0,0,0,0.08),0 4px 16px rgba(0,0,0,0.06)",
+  shadowMd:"0 4px 24px rgba(0,0,0,0.1),0 1px 4px rgba(0,0,0,0.08)",
+  shadowLg:"0 16px 60px rgba(0,0,0,0.14),0 4px 16px rgba(0,0,0,0.08)",
+};
+
+// ══════════════════════════════════════════════════════════
+// SEED DATA  (assistantFindings is empty — separate from evidenceLog)
+// ══════════════════════════════════════════════════════════
+
+const SEED = [
+  {
+    id:"th1",archived:false,starred:false,
+    lastTouchedAt:"2025-03-15",
+    title:"AI infrastructure leads applications",
+    statement:"Picks-and-shovels plays (compute, networking, energy) will outperform pure AI application software over the next 24 months because monetization uncertainty is structurally higher at the application layer.",
+    category:"Markets",status:"Active",createdAt:"2025-01-15",initialConviction:8,
+    assumptions:[
+      {id:"a1",archived:false,text:"Enterprise AI capex continues accelerating through 2026",status:"Holding",evidence:"AWS, Azure, GCP raised CapEx guidance Q1 2025.",weight:5,critical:true},
+      {id:"a2",archived:false,text:"Application-layer margins remain under pressure from commoditizing models",status:"Holding",evidence:"Model pricing dropped 80%+ YoY on equivalent tasks.",weight:4,critical:false},
+      {id:"a3",archived:false,text:"Energy constraints become a binding bottleneck before 2027",status:"Uncertain",evidence:"Mixed signals — nuclear deals accelerating, but data center pauses emerging.",weight:3,critical:false},
+    ],
+    evidenceLog:[
+      {id:"e1",archived:false,date:"2025-02-10",note:"NVDA raised guidance; data center segment +93% YoY.",sentiment:"for"},
+      {id:"e2",archived:false,date:"2025-03-01",note:"Several AI SaaS companies missed ARR targets citing build-vs-buy headwinds.",sentiment:"for"},
+      {id:"e3",archived:false,date:"2025-03-15",note:"OpenAI cut API pricing again — application-layer commoditization accelerating.",sentiment:"for"},
+    ],
+    assistantFindings:[],
+  },
+  {
+    id:"th2",archived:false,starred:true,
+    lastTouchedAt:"2025-02-20",
+    title:"USD dominance enters structural decline",
+    statement:"BRICS expansion, US fiscal trajectory, and weaponization of SWIFT will accelerate non-dollar trade settlement over the next decade. 10-year thesis, not a 12-month trade.",
+    category:"Macro",status:"Active",createdAt:"2024-11-20",initialConviction:6,
+    assumptions:[
+      {id:"a4",archived:false,text:"US debt/GDP continues rising with no credible fiscal consolidation",status:"Holding",evidence:"CBO projects $20T+ added to debt over 10 years.",weight:4,critical:true},
+      {id:"a5",archived:false,text:"BRICS nations expand trade in local currencies meaningfully",status:"Uncertain",evidence:"Progress slow — most BRICS trade still dollar-denominated.",weight:5,critical:true},
+      {id:"a6",archived:false,text:"No major EM currency crisis that reverses de-dollarization narrative",status:"Holding",evidence:"No systemic crisis as of writing.",weight:3,critical:false},
+    ],
+    evidenceLog:[
+      {id:"e4",archived:false,date:"2025-01-05",note:"Saudi Arabia joined SCO as dialogue partner. Slow but real geopolitical drift.",sentiment:"for"},
+      {id:"e5",archived:false,date:"2025-02-20",note:"DXY near 6-month high — short-term contradiction to thesis.",sentiment:"against"},
+    ],
+    assistantFindings:[],
+  },
+];
+
+// ══════════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════════
+
+function genId() {
+  return (typeof crypto!=="undefined"&&crypto.randomUUID)?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36);
+}
+function todayISO() { return new Date().toISOString().split("T")[0]; }
+function fmtDate(iso) {
+  if (!iso) return "—";
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+}
+function daysOld(iso) {
+  if (!iso) return 0;
+  return Math.max(0,Math.floor((Date.now()-new Date(`${iso}T00:00:00`).getTime())/86400000));
+}
+function ageLabel(d) {
+  if (d<1)   return "today";
+  if (d<7)   return `${d}d`;
+  if (d<30)  return `${Math.floor(d/7)}w`;
+  if (d<365) return `${Math.floor(d/30)}mo`;
+  return `${(d/365).toFixed(1)}y`;
+}
+function scoreColor(s) {
+  if (s===null) return T.textDim;
+  if (s>=70) return T.accent;
+  if (s>=40) return T.warn;
+  return T.danger;
+}
+
+// FIX: lastTouchedAt is the source of truth for staleness — not evidenceLog
+function lastActivityDays(thesis) {
+  return daysOld(thesis.lastTouchedAt || thesis.createdAt);
+}
+
+// FIX: conviction computed ONLY from manual evidenceLog — assistantFindings are isolated
+function computeConviction(thesis) {
+  const active=thesis.assumptions.filter(a=>!a.archived);
+  if (!active.length) return {score:null,label:"No assumptions",brokenCritical:false,holding:0,uncertain:0,broken:0,total:0,forCount:0,againstCount:0,evidenceBalance:null};
+  const totalW=active.reduce((s,a)=>s+a.weight,0);
+  const scoredW=active.reduce((s,a)=>s+a.weight*ASM_META[a.status].weight,0);
+  const raw=totalW>0?Math.round((scoredW/totalW)*100):0;
+  const brokenCritical=active.some(a=>a.critical&&a.status==="Broken");
+  const score=brokenCritical?Math.min(raw,20):raw;
+  // ONLY manual evidenceLog
+  const ev=thesis.evidenceLog.filter(e=>!e.archived);
+  const forCount=ev.filter(e=>e.sentiment==="for").length;
+  const againstCount=ev.filter(e=>e.sentiment==="against").length;
+  return {
+    score,brokenCritical,forCount,againstCount,
+    evidenceBalance:ev.length?Math.round((forCount/ev.length)*100):null,
+    label:`${active.filter(a=>a.status==="Holding").length}▲ ${active.filter(a=>a.status==="Uncertain").length}◆ ${active.filter(a=>a.status==="Broken").length}▼`,
+    holding:active.filter(a=>a.status==="Holding").length,
+    uncertain:active.filter(a=>a.status==="Uncertain").length,
+    broken:active.filter(a=>a.status==="Broken").length,
+    total:active.length,
+  };
+}
+
+// FIX: dedup hash — prevents re-scanning same assumption with same result
+function dedupHash(assumptionId, scanDate, suggestedStatus, noteSnippet) {
+  return `${assumptionId}|${scanDate}|${suggestedStatus}|${noteSnippet.slice(0,60).replace(/\s+/g," ")}`;
+}
+
+// FIX: hard payload validation before trusting AI response
+function validateScanPayload(payload, activeAssumptionIds) {
+  if (!payload||typeof payload!=="object") return {valid:false,reason:"Not an object"};
+  if (!Array.isArray(payload.assumptions)) return {valid:false,reason:"Missing assumptions array"};
+  for (const a of payload.assumptions) {
+    if (!a.id || !activeAssumptionIds.has(a.id)) return {valid:false,reason:`Unknown assumption id: ${a.id}`};
+    if (!["Holding","Uncertain","Broken"].includes(a.suggestedStatus)) return {valid:false,reason:`Invalid status: ${a.suggestedStatus}`};
+    if (!["for","against"].includes(a.thesisSentiment)) return {valid:false,reason:`Invalid sentiment: ${a.thesisSentiment}`};
+    if (typeof a.evidenceFor!=="string"||!a.evidenceFor.trim()) return {valid:false,reason:`Missing evidenceFor for ${a.id}`};
+    if (typeof a.evidenceAgainst!=="string"||!a.evidenceAgainst.trim()) return {valid:false,reason:`Missing evidenceAgainst for ${a.id}`};
+  }
+  return {valid:true};
+}
+
+function getScanLog() {
+  try{ return JSON.parse(localStorage.getItem(SCAN_LOG_KEY)||"{}"); }catch{ return {}; }
+}
+function markScanned(thesisId, threshold, appliedCount) {
+  const log=getScanLog();
+  log[thesisId]={date:todayISO(),threshold,model:MODEL_VERSION,appliedCount};
+  try{ localStorage.setItem(SCAN_LOG_KEY,JSON.stringify(log)); }catch{}
+}
+function wasScannedToday(thesisId) {
+  const entry=getScanLog()[thesisId];
+  return entry?.date===todayISO();
+}
+
+function validateImport(p) {
+  return Array.isArray(p)&&p.every(t=>t&&typeof t.id==="string"&&typeof t.title==="string"&&typeof t.statement==="string"&&Array.isArray(t.assumptions)&&Array.isArray(t.evidenceLog));
+}
+function exportJson(theses) {
+  const blob=new Blob([JSON.stringify(theses,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`theses-${todayISO()}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+
+// Ensure thesis has assistantFindings (migration for old data)
+function migratThesis(t) {
+  return {
+    ...t,
+    assistantFindings: t.assistantFindings||[],
+    lastTouchedAt: t.lastTouchedAt||t.createdAt,
+    // strip old source field from evidenceLog (legacy cleanup)
+    evidenceLog: (t.evidenceLog||[]).map(e=>{const{source,...rest}=e;return rest;}),
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+// API KEY MANAGEMENT
+// ══════════════════════════════════════════════════════════
+
+function getApiKey() {
+  try{ return localStorage.getItem(APIKEY_KEY)||""; }catch{ return ""; }
+}
+function saveApiKey(k) {
+  try{ localStorage.setItem(APIKEY_KEY,k.trim()); }catch{}
+}
+
+// ══════════════════════════════════════════════════════════
+// AI SCAN — Gemini 2.5 Flash + Google Search Grounding (FREE)
+// ══════════════════════════════════════════════════════════
+
+async function runAIScan(thesis, apiKey) {
+  const active=thesis.assumptions.filter(a=>!a.archived);
+  if (!active.length) throw new Error("No active assumptions to scan.");
+  if (!apiKey) throw new Error("No API key configured. Click ⚙ Settings to add your Gemini key.");
+
+  const prompt=`You are a rigorous, intellectually honest investment and macro analyst. Your job is to evaluate whether each assumption of a thesis still holds — using REAL, CURRENT information from the web.
+
+CRITICAL RULE: You MUST search the web for current information before evaluating. Confirmation bias is the enemy. For each assumption, actively seek BOTH supporting AND contradicting evidence with equal effort.
+
+THESIS: "${thesis.title}"
+STATEMENT: "${thesis.statement}"
+TODAY: ${todayISO()}
+
+EVALUATION RULES:
+- evidenceFor: Real, specific, current evidence that SUPPORTS this assumption
+- evidenceAgainst: Real, specific, current evidence that CONTRADICTS or weakens it
+- neutral: Relevant context that doesn't clearly favor either side
+- suggestedStatus: Holding (clearly true) / Uncertain (mixed signals) / Broken (clearly false)
+- thesisSentiment: "for" (net positive for thesis) or "against" (net negative)
+- confidence: "high" / "medium" / "low" based on quality of evidence found
+
+RULES:
+- Never manufacture evidence. If you can't find contradicting evidence, say "No strong contradicting evidence found as of [date]" in evidenceAgainst.
+- Be especially careful with critical=true assumptions — these are load-bearing.
+- Do NOT let the current assumption status bias your search.
+
+ASSUMPTIONS:
+${active.map((a,i)=>`${i+1}. [ID:${a.id}] "${a.text}"
+   Status: ${a.status} | Critical: ${a.critical} | Weight: ${a.weight}/5`).join("\n\n")}
+
+Search the web, then respond ONLY with this exact JSON structure (no markdown, no preamble):
+{
+  "assumptions": [
+    {
+      "id": "exact_assumption_id",
+      "suggestedStatus": "Holding|Uncertain|Broken",
+      "thesisSentiment": "for|against",
+      "confidence": "high|medium|low",
+      "evidenceFor": "1-2 sentences with specific facts/data",
+      "evidenceAgainst": "1-2 sentences with specific contradicting facts",
+      "neutral": "1 sentence of relevant context"
+    }
+  ],
+  "overallVerdict": "2-sentence balanced assessment of thesis health based on current evidence.",
+  "searchedTopics": ["topic searched 1", "topic searched 2"],
+  "scanDate": "${todayISO()}"
+}`;
+
+  const res=await fetch(`${GEMINI_ENDPOINT}?key=${apiKey}`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      contents:[{role:"user",parts:[{text:prompt}]}],
+      // Google Search Grounding — free, built into Gemini API
+      tools:[{googleSearch:{}}],
+      generationConfig:{
+        temperature:0.2,        // low temp = more factual, less hallucination
+        maxOutputTokens:3000,
+        responseMimeType:"application/json",
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const err=await res.json().catch(()=>({}));
+    const msg=err?.error?.message||res.statusText;
+    if (res.status===400&&msg.includes("API_KEY")) throw new Error("Invalid API key. Check Settings.");
+    if (res.status===429) throw new Error("Rate limit hit. Wait a moment and retry.");
+    throw new Error(`Gemini API ${res.status}: ${msg}`);
+  }
+
+  const data=await res.json();
+
+  // Extract text — Gemini may return grounding metadata alongside content
+  const candidate=data.candidates?.[0];
+  if (!candidate) throw new Error("No response from Gemini.");
+  if (candidate.finishReason==="SAFETY") throw new Error("Response blocked by safety filter.");
+
+  const txt=(candidate.content?.parts||[])
+    .filter(p=>p.text)
+    .map(p=>p.text)
+    .join("");
+  if (!txt.trim()) throw new Error("Empty response from Gemini.");
+
+  // Clean and parse JSON
+  const cleaned=txt.replace(/```(?:json)?[\s\S]*?```/g,m=>m.replace(/```(?:json)?|```/g,"")).trim();
+  let parsed;
+  try{ parsed=JSON.parse(cleaned); }
+  catch(e){ throw new Error(`JSON parse failed: ${e.message}`); }
+
+  // Hard validation — no blind trust
+  const activeIds=new Set(active.map(a=>a.id));
+  const check=validateScanPayload(parsed,activeIds);
+  if (!check.valid) throw new Error(`Payload validation failed: ${check.reason}`);
+
+  return parsed;
+}
+
+// ══════════════════════════════════════════════════════════
+// SETTINGS MODAL — API key management
+// ══════════════════════════════════════════════════════════
+
+function SettingsModal({onClose}) {
+  const [key,setKey]=useState(getApiKey);
+  const [saved,setSaved]=useState(false);
+  const save=()=>{saveApiKey(key);setSaved(true);setTimeout(()=>setSaved(false),2000);};
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(5px)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div className="up" style={{maxWidth:520,width:"100%",background:"#ffffff",borderRadius:16,overflow:"hidden",boxShadow:"0 16px 60px rgba(0,0,0,0.18)"}}>
+        <div style={{padding:"18px 22px",borderBottom:"1px solid rgba(0,0,0,0.09)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:8,letterSpacing:3,color:"#aaa098",fontFamily:"'JetBrains Mono',monospace",marginBottom:3}}>CONFIGURATION</div>
+            <div style={{fontFamily:"'Fraunces',Georgia,serif",fontSize:18,fontWeight:700,color:"#1c1914"}}>AI Engine Settings</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#aaa098",lineHeight:1}}>✕</button>
+        </div>
+        <div style={{padding:"22px"}}>
+          {/* Model info */}
+          <div style={{padding:"12px 14px",background:"rgba(7,137,106,0.06)",border:"1px solid rgba(7,137,106,0.2)",borderRadius:10,marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <span style={{fontSize:13}}>✦</span>
+              <span style={{fontSize:9,letterSpacing:2,color:"#07896a",fontFamily:"'JetBrains Mono',monospace"}}>FREE STACK</span>
+            </div>
+            <div style={{fontSize:12,color:"#6b6258",lineHeight:1.7,fontFamily:"'JetBrains Mono',monospace"}}>
+              <div>🤖 <strong style={{color:"#1c1914"}}>Gemini 2.5 Flash</strong> — Google AI Studio free tier</div>
+              <div>🔍 <strong style={{color:"#1c1914"}}>Google Search Grounding</strong> — included, no extra cost</div>
+              <div>📊 <strong style={{color:"#1c1914"}}>Limits</strong>: 1,500 requests/day · 1M tokens/day</div>
+            </div>
+          </div>
+
+          <label style={{display:"block",fontSize:9,letterSpacing:2,color:"#aaa098",fontFamily:"'JetBrains Mono',monospace",marginBottom:8}}>GEMINI API KEY</label>
+          <div style={{display:"flex",gap:8}}>
+            <input
+              type="password"
+              value={key}
+              onChange={e=>setKey(e.target.value)}
+              placeholder="AIzaSy..."
+              style={{flex:1,background:"#f0efe9",border:"1px solid rgba(0,0,0,0.12)",color:"#1c1914",fontSize:13,padding:"10px 12px",outline:"none",fontFamily:"'JetBrains Mono',monospace",borderRadius:8}}
+              onKeyDown={e=>{if(e.key==="Enter")save();}}
+            />
+            <button onClick={save} style={{background:"#07896a",border:"none",color:"#fff",fontSize:11,fontFamily:"'JetBrains Mono',monospace",padding:"10px 18px",cursor:"pointer",letterSpacing:1,fontWeight:600,borderRadius:8,whiteSpace:"nowrap"}}>
+              {saved?"SAVED ✓":"SAVE KEY"}
+            </button>
+          </div>
+          <div style={{marginTop:10,padding:"10px 12px",background:"rgba(0,0,0,0.03)",border:"1px solid rgba(0,0,0,0.08)",borderRadius:8}}>
+            <div style={{fontSize:11,color:"#6b6258",lineHeight:1.7,fontFamily:"'JetBrains Mono',monospace"}}>
+              Get your free key at <strong style={{color:"#1976d2"}}>aistudio.google.com</strong> →<br/>
+              Sign in → "Get API Key" → Create key → Paste above.<br/>
+              <span style={{color:"#aaa098"}}>Key is stored locally in your browser only.</span>
+            </div>
+          </div>
+
+          <div style={{marginTop:18,padding:"12px 14px",background:"rgba(176,120,0,0.06)",border:"1px solid rgba(176,120,0,0.2)",borderRadius:10}}>
+            <div style={{fontSize:9,letterSpacing:2,color:"#b07800",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>FOR PRODUCTION DEPLOYMENT</div>
+            <div style={{fontSize:11,color:"#6b6258",lineHeight:1.7,fontFamily:"'JetBrains Mono',monospace"}}>
+              Deploy on <strong style={{color:"#1c1914"}}>Vercel</strong> (free) → set GEMINI_API_KEY as env var → proxy calls server-side. Never expose API keys in client-side code in production.
+            </div>
+          </div>
+        </div>
+        <div style={{padding:"14px 22px",borderTop:"1px solid rgba(0,0,0,0.09)",display:"flex",justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(0,0,0,0.12)",color:"#6b6258",fontSize:11,fontFamily:"'JetBrains Mono',monospace",padding:"8px 18px",cursor:"pointer",borderRadius:8}}>CLOSE</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// GLOBAL CSS
+// ══════════════════════════════════════════════════════════
+
+const CSS=`
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,900;1,9..144,300;1,9..144,600&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#f7f6f3}
+::selection{background:rgba(7,137,106,0.18);color:#1c1914}
+::placeholder{color:#b0a89e}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#d0ccc8;border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:#b8b4b0}
+button,input,textarea,select{font-family:'JetBrains Mono',monospace;color:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid rgba(7,137,106,0.45);outline-offset:2px}
+input[type=range]{accent-color:#07896a;cursor:pointer;width:100%}
+input[type=checkbox]{accent-color:#07896a;cursor:pointer;width:14px;height:14px}
+input[type=date]::-webkit-calendar-picker-indicator{opacity:0.4;cursor:pointer}
+.card{transition:box-shadow .15s,transform .1s;cursor:pointer;}
+.card:hover{box-shadow:0 4px 20px rgba(0,0,0,0.11),0 1px 4px rgba(0,0,0,0.08)!important;transform:translateY(-1px);}
+.card:hover .del{opacity:1!important;}
+.del{opacity:0;transition:opacity .12s;}
+@keyframes up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideR{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:translateX(0)}}
+@keyframes slideD{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.up{animation:up .2s ease both}
+.slideR{animation:slideR .2s ease}
+.slideD{animation:slideD .22s ease both}
+.spin{display:inline-block;animation:spin .85s linear infinite}
+.pulse{animation:blink 1.5s ease-in-out infinite}
+`;
+
+// ══════════════════════════════════════════════════════════
+// INPUT STYLES
+// ══════════════════════════════════════════════════════════
+
+const I = {
+  input:{width:"100%",background:T.surface,border:`1px solid ${T.border}`,color:T.text,fontSize:13,padding:"9px 12px",outline:"none",fontFamily:T.mono,boxSizing:"border-box",borderRadius:8,transition:"border-color .15s"},
+  textarea:{width:"100%",background:T.surface,border:`1px solid ${T.border}`,color:T.text,fontSize:13,padding:"9px 12px",outline:"none",fontFamily:T.mono,boxSizing:"border-box",resize:"vertical",lineHeight:1.68,display:"block",borderRadius:8,transition:"border-color .15s"},
+  select:{background:T.surface,border:`1px solid ${T.border}`,color:T.textMid,fontSize:12,padding:"8px 11px",outline:"none",fontFamily:T.mono,cursor:"pointer",borderRadius:8,transition:"border-color .15s"},
+  btn:{background:T.accent,border:"none",color:"#fff",fontSize:11,fontFamily:T.mono,padding:"9px 18px",cursor:"pointer",letterSpacing:1.1,fontWeight:600,borderRadius:8,transition:"opacity .15s,background .15s"},
+  btnGhost:{background:"transparent",border:`1px solid ${T.border}`,color:T.textMid,fontSize:11,fontFamily:T.mono,padding:"8px 14px",cursor:"pointer",letterSpacing:0.5,borderRadius:8,transition:"all .15s"},
+  btnWarn:{background:T.warnBg,border:`1px solid ${T.warnBorder}`,color:T.warn,fontSize:11,fontFamily:T.mono,padding:"8px 14px",cursor:"pointer",borderRadius:8,transition:"all .15s"},
+};
+
+// ══════════════════════════════════════════════════════════
+// HOOKS
+// ══════════════════════════════════════════════════════════
+
+function useStorage(key,initial) {
+  const [val,_set]=useState(()=>{
+    try{ const r=localStorage.getItem(key); return r?JSON.parse(r):initial; }
+    catch{ return initial; }
+  });
+  const set=useCallback(updater=>{
+    _set(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      try{ localStorage.setItem(key,JSON.stringify(next)); }catch{}
+      return next;
+    });
+  },[key]);
+  return [val,set];
+}
+
+function useToasts() {
+  const [toasts,setToasts]=useState([]);
+  const timers=useRef({});
+  const push=useCallback((label,undoFn)=>{
+    const id=genId();
+    setToasts(p=>[...p,{id,label,undoFn}]);
+    timers.current[id]=setTimeout(()=>{
+      setToasts(p=>p.filter(t=>t.id!==id));
+      delete timers.current[id];
+    },5500);
+  },[]);
+  const dismiss=useCallback(id=>{
+    clearTimeout(timers.current[id]);
+    delete timers.current[id];
+    setToasts(p=>p.filter(t=>t.id!==id));
+  },[]);
+  useEffect(()=>()=>Object.values(timers.current).forEach(clearTimeout),[]);
+  return {toasts,push,dismiss};
+}
+
+// ══════════════════════════════════════════════════════════
+// SMALL COMPONENTS
+// ══════════════════════════════════════════════════════════
+
+let _seq=0;
+function Ring({score,accent,size=52}) {
+  const uid=useRef(`r${++_seq}`).current;
+  const stroke=4,r=size/2-stroke/2,circ=2*Math.PI*r;
+  const fill=score===null?0:(score/100)*circ;
+  const color=scoreColor(score);
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{flexShrink:0}}>
+      <defs><linearGradient id={uid} x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stopColor={accent} stopOpacity="0.85"/><stop offset="100%" stopColor={color}/></linearGradient></defs>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(0,0,0,0.07)" strokeWidth={stroke}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={`url(#${uid})`} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${fill} ${circ}`} transform={`rotate(-90 ${size/2} ${size/2})`} style={{transition:"stroke-dasharray .45s cubic-bezier(.4,0,.2,1)"}}/>
+      <text x="50%" y="50%" dominantBaseline="middle" textAnchor="middle" fill={score===null?T.textDim:color} fontFamily={T.mono} fontSize={size>46?11:9} fontWeight="700">{score===null?"—":`${score}%`}</text>
+    </svg>
+  );
+}
+
+function ConvictionBar({cv,compact=false}) {
+  const color=scoreColor(cv.score);
+  if (cv.score===null) return <span style={{fontSize:11,color:T.textDim,fontFamily:T.mono}}>—</span>;
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{flex:1,height:compact?3:4,background:"rgba(0,0,0,0.07)",borderRadius:2,overflow:"hidden"}}>
+          <div style={{width:`${cv.score}%`,height:"100%",background:color,transition:"width .45s cubic-bezier(.4,0,.2,1)",borderRadius:2}}/>
+        </div>
+        <span style={{fontFamily:T.mono,fontSize:compact?11:12,color,fontWeight:700,minWidth:32,textAlign:"right"}}>{cv.score}%</span>
+      </div>
+      {!compact&&cv.evidenceBalance!==null&&(
+        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:5}}>
+          <div style={{flex:1,height:2,background:"rgba(0,0,0,0.06)",borderRadius:1,overflow:"hidden"}}>
+            <div style={{width:`${cv.evidenceBalance}%`,height:"100%",background:T.accent,opacity:.5}}/>
+          </div>
+          <span style={{fontSize:9,color:T.textDim,fontFamily:T.mono}}>{cv.forCount}↑ {cv.againstCount}↓ manual</span>
+        </div>
+      )}
+      {!compact&&cv.brokenCritical&&<div style={{fontSize:9,color:T.danger,marginTop:4,fontFamily:T.mono,letterSpacing:0.4}}>⚠ critical broken</div>}
+    </div>
+  );
+}
+
+function KpiCard({value,label,color=T.text,hint,sub}) {
+  return (
+    <div style={{padding:"16px 18px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:T.shadow}}>
+      <div style={{fontFamily:T.serif,fontSize:34,fontWeight:900,color,lineHeight:1,letterSpacing:-1}}>{value}</div>
+      <div style={{fontSize:9,letterSpacing:2.5,color:T.textDim,fontFamily:T.mono,marginTop:6,textTransform:"uppercase"}}>{label}</div>
+      {hint&&<div style={{fontSize:9,color:T.textDim,fontFamily:T.mono,marginTop:2}}>{hint}</div>}
+      {sub&&<div style={{fontSize:10,color:sub.color||T.textMid,fontFamily:T.mono,marginTop:3}}>{sub.text}</div>}
+    </div>
+  );
+}
+
+function Pill({label,color,bg,border,small=false}) {
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",padding:small?"2px 7px":"3px 10px",borderRadius:999,fontSize:small?8:9,letterSpacing:1.4,fontFamily:T.mono,color,background:bg,border:`1px solid ${border}`,whiteSpace:"nowrap"}}>{label}</span>
+  );
+}
+
+function StaleBadge({days}) {
+  if (days<30) return null;
+  const color=days>90?T.danger:T.warn;
+  const bgc=days>90?T.dangerBg:T.warnBg;
+  const bdc=days>90?T.dangerBorder:T.warnBorder;
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",gap:3,padding:"2px 7px",borderRadius:999,background:bgc,border:`1px solid ${bdc}`,fontSize:8,letterSpacing:1,color,fontFamily:T.mono}}>
+      ● stale {ageLabel(days)}
+    </span>
+  );
+}
+
+function PortfolioHealthBar({theses}) {
+  const live=theses.filter(t=>!t.archived&&t.status==="Active");
+  if (!live.length) return null;
+  const convictions=live.map(t=>computeConviction(t).score).filter(s=>s!==null);
+  if (!convictions.length) return null;
+  const high=convictions.filter(s=>s>=70).length;
+  const mid=convictions.filter(s=>s>=40&&s<70).length;
+  const low=convictions.filter(s=>s<40).length;
+  const total=convictions.length;
+  const pHigh=Math.round((high/total)*100);
+  const pMid=Math.round((mid/total)*100);
+  const pLow=100-pHigh-pMid;
+  const avg=Math.round(convictions.reduce((a,b)=>a+b,0)/total);
+  return (
+    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"14px 18px",boxShadow:T.shadow}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <span style={{fontSize:9,letterSpacing:2.5,color:T.textDim,fontFamily:T.mono}}>PORTFOLIO HEALTH · {live.length} ACTIVE THESES</span>
+        <span style={{fontSize:11,fontFamily:T.mono,color:scoreColor(avg),fontWeight:700}}>{avg}% avg conviction</span>
+      </div>
+      <div style={{display:"flex",height:8,borderRadius:4,overflow:"hidden",gap:1}}>
+        {pHigh>0&&<div style={{flex:pHigh,background:T.accent,borderRadius:"4px 0 0 4px",transition:"flex .4s"}}/>}
+        {pMid>0&&<div style={{flex:pMid,background:T.warn}}/>}
+        {pLow>0&&<div style={{flex:pLow,background:T.danger,borderRadius:"0 4px 4px 0",transition:"flex .4s"}}/>}
+      </div>
+      <div style={{display:"flex",gap:16,marginTop:8,fontSize:9,fontFamily:T.mono}}>
+        <span style={{color:T.accent}}>▲ {high} strong (≥70%)</span>
+        <span style={{color:T.warn}}>◆ {mid} medium</span>
+        <span style={{color:T.danger}}>▼ {low} weak (&lt;40%)</span>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// CRITICAL CHANGE GATE — confirmation modal before applying
+// ══════════════════════════════════════════════════════════
+
+function CriticalGate({changes,onConfirm,onCancel}) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div className="up" style={{maxWidth:480,width:"100%",background:T.surface,borderRadius:14,overflow:"hidden",boxShadow:T.shadowLg,border:`1px solid ${T.dangerBorder}`}}>
+        <div style={{padding:"16px 20px",background:T.dangerBg,borderBottom:`1px solid ${T.dangerBorder}`,display:"flex",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:16}}>⚠</span>
+          <span style={{fontSize:11,letterSpacing:2,color:T.danger,fontFamily:T.mono}}>CRITICAL ASSUMPTION CHANGE</span>
+        </div>
+        <div style={{padding:"18px 20px"}}>
+          <p style={{fontSize:13,color:T.textMid,lineHeight:1.65,marginBottom:14}}>
+            This scan wants to modify <strong style={{color:T.text}}>{changes.length} critical assumption{changes.length!==1?"s":""}</strong>. These are load-bearing for the thesis conviction score. Review carefully before applying.
+          </p>
+          {changes.map(c=>{
+            const meta=ASM_META[c.suggestedStatus];
+            return (
+              <div key={c.id} style={{padding:"10px 12px",background:T.bgAlt,border:`1px solid ${T.border}`,borderLeft:`3px solid ${meta.color}`,borderRadius:8,marginBottom:8}}>
+                <div style={{fontSize:9,letterSpacing:1.5,color:meta.color,fontFamily:T.mono,marginBottom:4}}>{c.suggestedStatus.toUpperCase()} &nbsp;·&nbsp; CRITICAL</div>
+                <p style={{fontSize:12,color:T.text,marginBottom:4}}>{c.text}</p>
+                <p style={{fontSize:11,color:T.textDim,fontStyle:"italic"}}>{c.evidenceNote}</p>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{padding:"14px 20px",borderTop:`1px solid ${T.border}`,display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <button onClick={onCancel} style={I.btnGhost}>Cancel</button>
+          <button onClick={onConfirm} style={{...I.btn,background:T.danger}}>APPLY CRITICAL CHANGES</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// BALANCED FINDING CARD — shows FOR / AGAINST / NEUTRAL
+// ══════════════════════════════════════════════════════════
+
+function FindingCard({finding,assumption,checked,onToggle,showCheckbox=true}) {
+  const meta=ASM_META[finding.suggestedStatus]||ASM_META.Uncertain;
+  const confColor=finding.confidence==="high"?T.accent:finding.confidence==="low"?T.danger:T.warn;
+  return (
+    <div onClick={showCheckbox?onToggle:undefined}
+      style={{padding:"12px 14px",background:checked?T.accentBg:"rgba(0,0,0,0.02)",
+        border:`1px solid ${checked?T.accentBorder:T.border}`,
+        borderLeft:`3px solid ${meta.color}`,borderRadius:8,
+        cursor:showCheckbox?"pointer":"default",transition:"all .12s",marginBottom:6}}
+    >
+      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+        {showCheckbox&&<input type="checkbox" checked={!!checked} onChange={onToggle} onClick={e=>e.stopPropagation()} style={{marginTop:2,flexShrink:0}}/>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+            <span style={{color:meta.color,fontSize:9,letterSpacing:1.5,fontFamily:T.mono,fontWeight:600}}>{finding.suggestedStatus.toUpperCase()}</span>
+            <span style={{fontSize:8,letterSpacing:1,color:confColor,fontFamily:T.mono,background:finding.confidence==="high"?T.accentBg:finding.confidence==="low"?T.dangerBg:T.warnBg,padding:"1px 6px",borderRadius:4}}>
+              {finding.confidence.toUpperCase()} CONF
+            </span>
+            {assumption?.critical&&<span style={{fontSize:8,letterSpacing:1.5,color:T.danger,fontFamily:T.mono,background:T.dangerBg,padding:"1px 6px",borderRadius:4,border:`1px solid ${T.dangerBorder}`}}>CRITICAL</span>}
+            <span style={{marginLeft:"auto",fontSize:9,color:finding.thesisSentiment==="for"?T.accent:T.danger,fontFamily:T.mono,fontWeight:600}}>{finding.thesisSentiment==="for"?"↑ FOR THESIS":"↓ AGAINST THESIS"}</span>
+          </div>
+          {assumption&&<p style={{fontSize:11,color:T.textDim,marginBottom:8,fontStyle:"italic"}}>"{assumption.text}"</p>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div style={{padding:"7px 9px",background:"rgba(7,137,106,0.05)",border:`1px solid rgba(7,137,106,0.14)`,borderRadius:6}}>
+              <div style={{fontSize:8,letterSpacing:1.5,color:T.accent,fontFamily:T.mono,marginBottom:4}}>SUPPORTS ↑</div>
+              <p style={{fontSize:11,color:T.textMid,lineHeight:1.6,margin:0}}>{finding.evidenceFor}</p>
+            </div>
+            <div style={{padding:"7px 9px",background:"rgba(192,48,48,0.05)",border:`1px solid rgba(192,48,48,0.14)`,borderRadius:6}}>
+              <div style={{fontSize:8,letterSpacing:1.5,color:T.danger,fontFamily:T.mono,marginBottom:4}}>CONTRADICTS ↓</div>
+              <p style={{fontSize:11,color:T.textMid,lineHeight:1.6,margin:0}}>{finding.evidenceAgainst}</p>
+            </div>
+          </div>
+          {finding.neutral&&(
+            <div style={{marginTop:7,padding:"6px 9px",background:"rgba(0,0,0,0.03)",border:`1px solid ${T.border}`,borderRadius:6}}>
+              <div style={{fontSize:8,letterSpacing:1.5,color:T.textDim,fontFamily:T.mono,marginBottom:3}}>CONTEXT</div>
+              <p style={{fontSize:11,color:T.textDim,lineHeight:1.6,margin:0}}>{finding.neutral}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// AUTO-SCAN BANNER
+// ══════════════════════════════════════════════════════════
+
+function AutoScanBanner({state,onDismiss}) {
+  if (state.status==="idle") return null;
+  const isRunning=state.status==="running";
+  const pct=state.total>0?Math.round((state.results.length/state.total)*100):0;
+  return (
+    <div className="slideD" style={{position:"fixed",top:0,left:0,right:0,zIndex:200,background:isRunning?"#1c1914":"#ffffff",borderBottom:`2px solid ${isRunning?"#07896a":T.border}`,boxShadow:T.shadowMd}}>
+      {isRunning&&<div style={{height:2,background:"rgba(7,137,106,0.2)"}}><div style={{height:"100%",background:"#07896a",width:`${pct}%`,transition:"width .4s ease"}}/></div>}
+      <div style={{maxWidth:1220,margin:"0 auto",padding:"10px 24px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+        {isRunning&&(
+          <>
+            <span className="spin" style={{color:"#07896a",fontSize:14}}>◌</span>
+            <div style={{flex:1}}>
+              <span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#e8e0d0",letterSpacing:0.5}}>
+                Auto-scanning · web search enabled &nbsp;<span style={{color:"#aaa098"}}>{state.results.length}/{state.total}</span>
+              </span>
+              {state.current&&<span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#07896a",marginLeft:10}}>→ {state.current.title.slice(0,52)}{state.current.title.length>52?"…":""}</span>}
+            </div>
+            <span style={{fontSize:9,color:"#4a4540",fontFamily:"'JetBrains Mono',monospace"}}>once per day per thesis</span>
+          </>
+        )}
+        {state.status==="done"&&(
+          <>
+            <span style={{color:T.accent,fontSize:14}}>✦</span>
+            <div style={{flex:1}}>
+              <span style={{fontSize:11,fontFamily:T.mono,color:T.text,letterSpacing:0.5}}>
+                Auto-scan complete — <span style={{color:T.accent,fontWeight:600}}>{state.total} thesis{state.total!==1?"es":""} reviewed</span>
+              </span>
+              {state.errors>0&&<span style={{fontSize:10,color:T.warn,marginLeft:8,fontFamily:T.mono}}>{state.errors} failed</span>}
+              <span style={{fontSize:10,color:T.textDim,fontFamily:T.mono,marginLeft:8}}>scroll down to review results</span>
+            </div>
+            <button onClick={onDismiss} style={{...I.btnGhost,padding:"6px 12px",fontSize:10}}>DISMISS</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// AUTO-SCAN RESULTS DRAWER
+// ══════════════════════════════════════════════════════════
+
+function AutoScanResultsDrawer({state,onApply,onDismissAll,threshold,setThreshold,onManualTrigger}) {
+  const [expanded,setExpanded]=useState(true);
+  const [selMap,setSelMap]=useState({});
+  const [gateData,setGateData]=useState(null);
+
+  useEffect(()=>{
+    if (!state.results.length) return;
+    const m={};
+    state.results.forEach(r=>{
+      if (r.result) m[r.thesisId]=new Set(r.result.assumptions.map(a=>a.id));
+    });
+    setSelMap(m);
+  },[state.results]);
+
+  const toggleSel=(thesisId,asmId)=>setSelMap(prev=>{
+    const cur=new Set(prev[thesisId]||[]);
+    cur.has(asmId)?cur.delete(asmId):cur.add(asmId);
+    return {...prev,[thesisId]:cur};
+  });
+
+  const attemptApply=(thesisId,result,thesis,selectedIds)=>{
+    // FIX: critical-change gate
+    const criticalChanges=result.assumptions
+      .filter(r=>selectedIds.has(r.id))
+      .filter(r=>{
+        const asm=thesis?.assumptions.find(a=>a.id===r.id);
+        return asm?.critical && r.suggestedStatus!==asm.status;
+      })
+      .map(r=>{
+        const asm=thesis?.assumptions.find(a=>a.id===r.id);
+        return {id:r.id,text:asm?.text||"",suggestedStatus:r.suggestedStatus,evidenceNote:r.evidenceFor};
+      });
+
+    if (criticalChanges.length>0) {
+      setGateData({thesisId,result,selectedIds,criticalChanges});
+    } else {
+      onApply(thesisId,result,selectedIds);
+      setSelMap(prev=>{const n={...prev};delete n[thesisId];return n;});
+    }
+  };
+
+  const confirmGate=()=>{
+    if (!gateData) return;
+    onApply(gateData.thesisId,gateData.result,gateData.selectedIds);
+    setSelMap(prev=>{const n={...prev};delete n[gateData.thesisId];return n;});
+    setGateData(null);
+  };
+
+  if (state.status==="idle") return (
+    <>
+      {gateData&&<CriticalGate changes={gateData.criticalChanges} onConfirm={confirmGate} onCancel={()=>setGateData(null)}/>}
+      <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"12px 18px",boxShadow:T.shadow,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:18}}>
+        <span className="pulse" style={{color:T.accent,fontSize:12}}>✦</span>
+        <div style={{flex:1}}>
+          <span style={{fontSize:9,letterSpacing:2.5,color:T.textDim,fontFamily:T.mono}}>AUTO-SCAN &nbsp;·&nbsp; WEB SEARCH ENABLED</span>
+          <p style={{fontSize:12,color:T.textMid,marginTop:3}}>Theses inactive ≥<strong style={{color:T.text}}>{threshold} days</strong> are auto-scanned on load. Balanced FOR / AGAINST / NEUTRAL evidence per assumption.</p>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <select value={threshold} onChange={e=>setThreshold(Number(e.target.value))} style={{...I.select,fontSize:11,padding:"5px 8px"}}>
+            {[7,14,30,60,90].map(d=><option key={d} value={d}>{d} days</option>)}
+          </select>
+          <button onClick={onManualTrigger} style={{...I.btn,padding:"7px 14px",fontSize:10}}>SCAN NOW</button>
+        </div>
+      </div>
+    </>
+  );
+
+  if (state.status==="running") return (
+    <div style={{background:T.surface,border:`1px solid ${T.accentBorder}`,borderRadius:10,padding:"14px 18px",boxShadow:T.shadow,marginBottom:18}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <span className="spin" style={{color:T.accent}}>◌</span>
+        <span style={{fontSize:9,letterSpacing:2.5,color:T.accent,fontFamily:T.mono}}>SCANNING WITH WEB SEARCH · {state.results.length}/{state.total}</span>
+        <div style={{flex:1,height:3,background:"rgba(0,0,0,0.07)",borderRadius:2,overflow:"hidden",marginLeft:8}}>
+          <div style={{height:"100%",background:T.accent,width:`${state.total>0?Math.round((state.results.length/state.total)*100):0}%`,transition:"width .4s ease"}}/>
+        </div>
+      </div>
+      {state.searchedTopics?.length>0&&(
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:6}}>
+          {state.searchedTopics.map((t,i)=><span key={i} style={{fontSize:9,color:T.textDim,fontFamily:T.mono,background:T.bgAlt,padding:"2px 8px",borderRadius:4,border:`1px solid ${T.border}`}}>🔍 {t}</span>)}
+        </div>
+      )}
+    </div>
+  );
+
+  const successResults=state.results.filter(r=>r.result&&!r.error);
+  const failedResults =state.results.filter(r=>r.error);
+  if (!successResults.length&&!failedResults.length) return null;
+
+  const totalChanges=Object.values(selMap).reduce((s,set)=>s+set.size,0);
+
+  return (
+    <>
+      {gateData&&<CriticalGate changes={gateData.criticalChanges} onConfirm={confirmGate} onCancel={()=>setGateData(null)}/>}
+      <div className="up" style={{background:T.surface,border:`1px solid ${T.accentBorder}`,borderRadius:12,overflow:"hidden",boxShadow:T.shadowMd,marginBottom:18}}>
+        <div style={{padding:"14px 18px",background:T.accentBg,borderBottom:`1px solid ${T.accentBorder}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <span className="pulse" style={{color:T.accent,fontSize:13}}>✦</span>
+          <div style={{flex:1}}>
+            <span style={{fontSize:9,letterSpacing:2.5,color:T.accent,fontFamily:T.mono}}>
+              AUTO-SCAN RESULTS · {fmtDate(todayISO())} · {successResults.length} REVIEWED · WEB SEARCH
+            </span>
+            {failedResults.length>0&&<span style={{fontSize:9,color:T.warn,fontFamily:T.mono,marginLeft:10}}>{failedResults.length} failed</span>}
+          </div>
+          <button onClick={()=>setExpanded(v=>!v)} style={{...I.btnGhost,padding:"5px 11px",fontSize:10}}>{expanded?"COLLAPSE ↑":"EXPAND ↓"}</button>
+          <button onClick={onDismissAll} style={{background:"none",border:"none",color:T.textDim,cursor:"pointer",fontSize:11,fontFamily:T.mono}}>dismiss</button>
+        </div>
+
+        {expanded&&(
+          <div>
+            {successResults.map((r,ri)=>{
+              const catC=CAT_META[r.thesisCategory]||CAT_META.Markets;
+              const sel=selMap[r.thesisId]||new Set();
+              return (
+                <div key={r.thesisId} style={{borderBottom:ri<successResults.length-1?`1px solid ${T.border}`:"none"}}>
+                  <div style={{padding:"12px 18px",background:T.bgAlt,display:"flex",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                    <div style={{width:3,height:40,borderRadius:1.5,background:catC.accent,flexShrink:0,marginTop:2}}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:T.serif,fontSize:15,fontWeight:700,color:T.text}}>{r.thesisTitle}</div>
+                      {r.result.overallVerdict&&<div style={{fontSize:12,color:T.textMid,marginTop:3,fontStyle:"italic",lineHeight:1.55}}>"{r.result.overallVerdict}"</div>}
+                      {r.result.searchedTopics?.length>0&&(
+                        <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
+                          {r.result.searchedTopics.map((t,i)=><span key={i} style={{fontSize:8,color:T.textDim,fontFamily:T.mono,background:T.bgAlt,padding:"1px 6px",borderRadius:3,border:`1px solid ${T.border}`}}>🔍 {t}</span>)}
+                        </div>
+                      )}
+                    </div>
+                    <button onClick={()=>attemptApply(r.thesisId,r.result,r.thesis,sel)} disabled={sel.size===0}
+                      style={{...I.btn,opacity:sel.size?1:0.3,padding:"7px 14px",fontSize:10}}>APPLY {sel.size}</button>
+                  </div>
+                  <div style={{padding:"12px 18px"}}>
+                    {r.result.assumptions.map(a=>{
+                      const asm=r.thesis?.assumptions.find(x=>x.id===a.id);
+                      return (
+                        <FindingCard key={a.id}
+                          finding={a} assumption={asm}
+                          checked={sel.has(a.id)}
+                          onToggle={()=>toggleSel(r.thesisId,a.id)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {failedResults.length>0&&(
+              <div style={{padding:"10px 18px",borderTop:`1px solid ${T.border}`}}>
+                {failedResults.map(r=><div key={r.thesisId} style={{fontSize:11,color:T.warn,fontFamily:T.mono,padding:"3px 0"}}>⚠ {r.thesisTitle} — {r.error}</div>)}
+              </div>
+            )}
+            {successResults.length>1&&(
+              <div style={{padding:"12px 18px",borderTop:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:T.bgAlt}}>
+                <span style={{fontSize:10,color:T.textDim,fontFamily:T.mono}}>{totalChanges} changes selected across {successResults.length} theses</span>
+                <button onClick={()=>{
+                  successResults.forEach(r=>{
+                    const sel=selMap[r.thesisId];
+                    if (sel?.size>0) attemptApply(r.thesisId,r.result,r.thesis,sel);
+                  });
+                }} disabled={totalChanges===0} style={{...I.btn,opacity:totalChanges?1:0.3}}>APPLY ALL ({totalChanges})</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// EVIDENCE TIMELINE (manual only — no AI findings here)
+// ══════════════════════════════════════════════════════════
+
+function Timeline({entries,onArchive}) {
+  if (!entries.length) return <div style={{padding:"28px 0",textAlign:"center",color:T.textDim,fontSize:12,fontFamily:T.mono}}>No manual evidence yet. Log what you observe.</div>;
+  return (
+    <div style={{position:"relative",paddingLeft:80}}>
+      <div style={{position:"absolute",left:60,top:4,bottom:4,width:1,background:T.border}}/>
+      {entries.map((e,i)=>{
+        const color=e.sentiment==="for"?T.accent:T.danger;
+        return (
+          <div key={e.id} className="up" style={{display:"flex",gap:14,paddingBottom:14,position:"relative",animationDelay:`${i*.035}s`}}>
+            <div style={{position:"absolute",left:-80,top:0,width:56,textAlign:"right",paddingTop:1}}>
+              <div style={{fontSize:8,letterSpacing:1.5,color,fontFamily:T.mono,fontWeight:600}}>{e.sentiment==="for"?"FOR":"AGAINST"}</div>
+              <div style={{fontSize:8,color:T.textDim,fontFamily:T.mono,marginTop:2,lineHeight:1.3}}>{fmtDate(e.date)}</div>
+            </div>
+            <div style={{position:"absolute",left:-22,top:4,width:8,height:8,borderRadius:"50%",background:color,border:`2px solid ${T.bg}`,zIndex:1,flexShrink:0}}/>
+            <p style={{fontSize:13,color:T.textMid,lineHeight:1.65,margin:0,flex:1}}>{e.note}</p>
+            <button onClick={()=>onArchive(e.id)}
+              style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textDim,padding:2,alignSelf:"flex-start",marginTop:1,borderRadius:4,transition:"color .12s",flexShrink:0}}
+              onMouseEnter={x=>x.currentTarget.style.color=T.danger}
+              onMouseLeave={x=>x.currentTarget.style.color=T.textDim}
+            >✕</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// THESIS MODAL
+// ══════════════════════════════════════════════════════════
+
+function ThesisModal({thesis,onUpdate,onClose,toastPush,setTheses,onOpenSettings}) {
+  const [tab,setTab]           = useState("assumptions");
+  const [localSt,setLocalSt]   = useState(thesis.statement);
+  const prevId                 = useRef(thesis.id);
+  const [scanning,setScanning] = useState(false);
+  const [scanResult,setScanResult] = useState(null);
+  const [scanError,setScanError]   = useState(null);
+  const [gateData,setGateData]     = useState(null);
+  const apiKey                 = getApiKey();
+
+  useEffect(()=>{
+    if (prevId.current!==thesis.id) {
+      setLocalSt(thesis.statement); prevId.current=thesis.id;
+      setScanResult(null); setScanError(null); setGateData(null);
+    }
+  },[thesis.id,thesis.statement]);
+
+  const flush=useCallback(()=>{
+    const t=localSt.trim();
+    if (t&&t!==thesis.statement) onUpdate({...thesis,statement:t,lastTouchedAt:todayISO()});
+  },[localSt,thesis,onUpdate]);
+
+  useEffect(()=>{
+    const h=e=>{if(e.key==="Escape"){flush();onClose();}};
+    document.addEventListener("keydown",h);
+    return()=>document.removeEventListener("keydown",h);
+  },[flush,onClose]);
+
+  const [dA,setDA]=useState({text:"",status:"Holding",evidence:"",weight:3,critical:false});
+  const [dE,setDE]=useState({date:todayISO(),note:"",sentiment:"for"});
+
+  const addAssumption=()=>{
+    if (!dA.text.trim()) return;
+    onUpdate({...thesis,lastTouchedAt:todayISO(),assumptions:[...thesis.assumptions,{id:genId(),archived:false,...dA,text:dA.text.trim(),evidence:dA.evidence.trim()}]});
+    setDA({text:"",status:"Holding",evidence:"",weight:3,critical:false});
+  };
+  const addEvidence=()=>{
+    if (!dE.note.trim()) return;
+    onUpdate({...thesis,lastTouchedAt:todayISO(),evidenceLog:[...thesis.evidenceLog,{id:genId(),archived:false,...dE,note:dE.note.trim()}]});
+    setDE({date:todayISO(),note:"",sentiment:"for"});
+  };
+  const archiveA=(aId)=>{
+    onUpdate({...thesis,lastTouchedAt:todayISO(),assumptions:thesis.assumptions.map(a=>a.id===aId?{...a,archived:true}:a)});
+    toastPush("Assumption archived",()=>setTheses(p=>p.map(t=>t.id===thesis.id?{...t,assumptions:t.assumptions.map(a=>a.id===aId?{...a,archived:false}:a)}:t)));
+  };
+  const archiveE=(eId)=>{
+    onUpdate({...thesis,lastTouchedAt:todayISO(),evidenceLog:thesis.evidenceLog.map(e=>e.id===eId?{...e,archived:true}:e)});
+    toastPush("Evidence archived",()=>setTheses(p=>p.map(t=>t.id===thesis.id?{...t,evidenceLog:t.evidenceLog.map(e=>e.id===eId?{...e,archived:false}:e)}:t)));
+  };
+
+  const handleScan=async()=>{
+    if (!apiKey) { setScanError("No API key. Click ⚙ Settings to add your free Gemini key."); return; }
+    setScanResult(null); setScanError(null); setScanning(true);
+    try{ setScanResult(await runAIScan(thesis,apiKey)); }
+    catch(e){ setScanError(e.message||"Scan failed."); }
+    finally{ setScanning(false); }
+  };
+
+  const attemptApply=(result,checkedIds)=>{
+    const criticalChanges=result.assumptions
+      .filter(r=>checkedIds.has(r.id))
+      .filter(r=>{
+        const asm=thesis.assumptions.find(a=>a.id===r.id);
+        return asm?.critical&&r.suggestedStatus!==asm.status;
+      })
+      .map(r=>{const asm=thesis.assumptions.find(a=>a.id===r.id);return{id:r.id,text:asm?.text||"",suggestedStatus:r.suggestedStatus,evidenceNote:r.evidenceFor};});
+
+    if (criticalChanges.length>0) {
+      setGateData({result,checkedIds,criticalChanges});
+    } else {
+      applyAIScan(result,checkedIds);
+    }
+  };
+
+  const applyAIScan=(result,checkedIds)=>{
+    // FIX: findings go to assistantFindings, NOT evidenceLog
+    const newFindings=[];
+    result.assumptions.forEach(r=>{
+      if (!checkedIds.has(r.id)) return;
+      const hash=dedupHash(r.id,result.scanDate,r.suggestedStatus,r.evidenceFor);
+      if ((thesis.assistantFindings||[]).some(f=>f.dedupHash===hash)) return; // skip duplicate
+      newFindings.push({
+        id:genId(),
+        scanDate:result.scanDate,
+        assumptionId:r.id,
+        suggestedStatus:r.suggestedStatus,
+        evidenceFor:r.evidenceFor,
+        evidenceAgainst:r.evidenceAgainst,
+        neutral:r.neutral||"",
+        thesisSentiment:r.thesisSentiment,
+        confidence:r.confidence||"medium",
+        dedupHash:hash,
+        applied:true,
+      });
+    });
+
+    // Update assumption statuses (selected ones only)
+    const updatedAssumptions=thesis.assumptions.map(a=>{
+      const r=result.assumptions.find(x=>x.id===a.id);
+      if (!r||!checkedIds.has(a.id)) return a;
+      return {...a,status:r.suggestedStatus};
+    });
+
+    onUpdate({
+      ...thesis,
+      lastTouchedAt:todayISO(),
+      assumptions:updatedAssumptions,
+      assistantFindings:[...(thesis.assistantFindings||[]),...newFindings],
+    });
+    setScanResult(null); setGateData(null);
+    toastPush(`Scan applied — ${checkedIds.size} assumption${checkedIds.size!==1?"s":""} updated`,undefined);
+    setTab("findings");
+  };
+
+  const cv    =computeConviction(thesis);
+  const sm    =STATUS_META[thesis.status];
+  const catC  =CAT_META[thesis.category];
+  const activeA=thesis.assumptions.filter(a=>!a.archived);
+  const activeE=[...thesis.evidenceLog.filter(e=>!e.archived)].sort((a,b)=>b.date.localeCompare(a.date));
+  const findings=(thesis.assistantFindings||[]).filter(f=>f.applied).sort((a,b)=>b.scanDate.localeCompare(a.scanDate));
+  const stale =lastActivityDays(thesis);
+
+  return (
+    <>
+      {gateData&&<CriticalGate changes={gateData.criticalChanges} onConfirm={()=>applyAIScan(gateData.result,gateData.checkedIds)} onCancel={()=>setGateData(null)}/>}
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)",zIndex:100,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"24px 12px 60px"}}
+        onClick={e=>{if(e.target===e.currentTarget){flush();onClose();}}}>
+        <div className="up" style={{width:"100%",maxWidth:960,background:T.surface,borderRadius:16,overflow:"hidden",boxShadow:T.shadowLg,border:`1px solid ${T.border}`}}>
+
+          <div style={{height:4,background:`linear-gradient(90deg,${catC.accent},${catC.accent}55,transparent)`}}/>
+
+          <div style={{padding:"24px 28px 20px",borderBottom:`1px solid ${T.border}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:18,alignItems:"flex-start"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",flexWrap:"wrap",gap:7,alignItems:"center",marginBottom:12}}>
+                  <Pill label={thesis.status.toUpperCase()} color={sm.color} bg={sm.bg} border={sm.border}/>
+                  <Pill label={thesis.category.toUpperCase()} color={catC.accent} bg={catC.bg} border={catC.border}/>
+                  <span style={{fontSize:9,color:T.textDim,fontFamily:T.mono,letterSpacing:1.5}}>
+                    {fmtDate(thesis.createdAt)} · {ageLabel(daysOld(thesis.createdAt))} old · initial {thesis.initialConviction}/10
+                  </span>
+                  {stale>=30&&<StaleBadge days={stale}/>}
+                </div>
+                <h2 style={{fontFamily:T.serif,fontSize:25,fontWeight:700,color:T.text,lineHeight:1.22,marginBottom:14}}>{thesis.title}</h2>
+                <textarea value={localSt} onChange={e=>setLocalSt(e.target.value)} onBlur={flush} rows={3}
+                  style={{...I.textarea,color:T.textMid,background:T.bgAlt,border:`1px solid ${T.border}`}}/>
+                <div style={{fontSize:9,color:T.textDim,fontFamily:T.mono,marginTop:4,textAlign:"right"}}>saves on blur · ESC closes</div>
+              </div>
+              <button onClick={()=>{flush();onClose();}}
+                style={{background:"none",border:"none",color:T.textDim,cursor:"pointer",fontSize:16,padding:4,lineHeight:1,borderRadius:6,transition:"color .12s"}}
+                onMouseEnter={e=>e.currentTarget.style.color=T.danger}
+                onMouseLeave={e=>e.currentTarget.style.color=T.textDim}
+              >✕</button>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:14,marginTop:16,alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:9,letterSpacing:2.5,color:T.textDim,fontFamily:T.mono,marginBottom:8}}>
+                  CONVICTION (MANUAL ONLY) · <span style={{color:scoreColor(cv.score)}}>{cv.label}</span>
+                </div>
+                <ConvictionBar cv={cv}/>
+                <div style={{display:"flex",gap:14,marginTop:7,fontSize:10,fontFamily:T.mono,color:T.textDim}}>
+                  <span>Initial: <span style={{color:T.text}}>{thesis.initialConviction}/10</span></span>
+                  <span style={{color:T.accent}}>{cv.forCount}↑ for</span>
+                  <span style={{color:T.danger}}>{cv.againstCount}↓ against</span>
+                  <span style={{color:T.textDim,marginLeft:"auto"}}>{findings.length} AI finding{findings.length!==1?"s":""}</span>
+                </div>
+              </div>
+              <select value={thesis.status} onChange={e=>onUpdate({...thesis,status:e.target.value,lastTouchedAt:todayISO()})}
+                style={{...I.select,color:sm.color,border:`1px solid ${sm.border}`,background:sm.bg,minWidth:108,fontWeight:500}}
+              >{THESIS_ST.map(s=><option key={s} value={s}>{s}</option>)}</select>
+              <button onClick={handleScan} disabled={scanning||activeA.length===0}
+                style={{...I.btn,background:scanning?"transparent":apiKey?T.accent:"#9a6c00",color:scanning?T.accent:"#fff",border:scanning?`1px solid ${T.accentBorder}`:"none",opacity:activeA.length===0?0.3:1,display:"flex",alignItems:"center",gap:6,minWidth:130,justifyContent:"center"}}
+                title={!apiKey?"Add Gemini API key in Settings":undefined}
+              >{scanning?<><span className="spin">◌</span>SCANNING…</>:<>✦ {apiKey?"GEMINI SCAN":"SET API KEY"}</>}</button>
+            </div>
+
+            {scanError&&(
+              <div style={{marginTop:12,padding:"9px 13px",background:T.dangerBg,border:`1px solid ${T.dangerBorder}`,borderRadius:8,fontSize:12,color:T.danger,fontFamily:T.mono,display:"flex",alignItems:"center",gap:10}}>
+                <span style={{flex:1}}>⚠ {scanError}</span>
+                {!apiKey&&<button onClick={onOpenSettings} style={{background:"none",border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:10,fontFamily:T.mono,padding:"4px 10px",borderRadius:6,cursor:"pointer",whiteSpace:"nowrap"}}>⚙ Settings</button>}
+              </div>
+            )}
+
+            {scanResult&&(
+              <div className="up" style={{marginTop:16,background:T.surface,border:`1px solid ${T.accentBorder}`,borderRadius:12,overflow:"hidden",boxShadow:T.shadow}}>
+                <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.accentBorder}`,background:T.accentBg,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span className="pulse" style={{color:T.accent}}>✦</span>
+                    <span style={{fontSize:9,letterSpacing:2.5,color:T.accent,fontFamily:T.mono}}>SCAN RESULTS · WEB SEARCH · {scanResult.scanDate}</span>
+                  </div>
+                  <button onClick={()=>setScanResult(null)} style={{background:"none",border:"none",color:T.textDim,cursor:"pointer",fontSize:11,fontFamily:T.mono}}>dismiss</button>
+                </div>
+                {scanResult.overallVerdict&&<div style={{padding:"10px 16px",borderBottom:`1px solid rgba(7,137,106,0.1)`,fontSize:13,color:T.textMid,lineHeight:1.65,fontStyle:"italic"}}>"{scanResult.overallVerdict}"</div>}
+                <div style={{padding:"12px 16px"}}>
+                  <ScanApplyPanel result={scanResult} thesis={thesis} onAttemptApply={attemptApply}/>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,background:T.bgAlt}}>
+            {[["assumptions",activeA.length],["evidence",activeE.length],["findings",findings.length]].map(([name,count])=>(
+              <button key={name} onClick={()=>setTab(name)}
+                style={{flex:1,padding:"11px 0",background:"none",border:"none",borderBottom:tab===name?`2px solid ${catC.accent}`:"2px solid transparent",color:tab===name?T.text:T.textDim,fontSize:9,letterSpacing:2.5,fontFamily:T.mono,textTransform:"uppercase",cursor:"pointer",transition:"color .12s"}}
+              >{name} ({count})</button>
+            ))}
+          </div>
+
+          <div style={{padding:"22px 28px 28px",minHeight:260,background:T.surface}}>
+            {tab==="assumptions"&&(
+              <div>
+                {activeA.length===0&&<div style={{textAlign:"center",padding:"28px 0",color:T.textDim,fontSize:12,fontFamily:T.mono}}>A thesis without falsifiable assumptions is just an opinion.</div>}
+                {activeA.map(a=>{
+                  const meta=ASM_META[a.status];
+                  return (
+                    <div key={a.id} className="up" style={{marginBottom:7,padding:"12px 14px",background:T.bgAlt,border:`1px solid ${T.border}`,borderLeft:`3px solid ${meta.color}`,borderRadius:8}}>
+                      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                        <span style={{color:meta.color,fontSize:11,minWidth:14,marginTop:1}}>{meta.symbol}</span>
+                        <div style={{flex:1,minWidth:0}}>
+                          <span style={{fontSize:13,color:T.text,lineHeight:1.55}}>{a.text}</span>
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginTop:6,flexWrap:"wrap"}}>
+                            <div style={{width:70,height:3,background:"rgba(0,0,0,0.1)",borderRadius:1.5,overflow:"hidden"}}>
+                              <div style={{width:`${(a.weight/5)*100}%`,height:"100%",background:meta.color,opacity:.7}}/>
+                            </div>
+                            <span style={{fontSize:9,color:T.textDim,fontFamily:T.mono}}>w{a.weight}/5</span>
+                            {a.critical&&<span style={{fontSize:8,letterSpacing:1.5,color:T.danger,fontFamily:T.mono,background:T.dangerBg,padding:"2px 6px",borderRadius:4,border:`1px solid ${T.dangerBorder}`}}>CRITICAL</span>}
+                          </div>
+                          {a.evidence&&<div style={{fontSize:11,color:T.textDim,fontStyle:"italic",marginTop:8,paddingTop:7,borderTop:`1px solid ${T.border}`,lineHeight:1.55}}>{a.evidence}</div>}
+                        </div>
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                          <select value={a.status} onChange={e=>onUpdate({...thesis,lastTouchedAt:todayISO(),assumptions:thesis.assumptions.map(x=>x.id===a.id?{...x,status:e.target.value}:x)})}
+                            style={{...I.select,fontSize:10,padding:"4px 8px",color:meta.color,border:`1px solid ${meta.color}40`,minWidth:84}}
+                          >{ASSUME_ST.map(s=><option key={s} value={s}>{s}</option>)}</select>
+                          <button onClick={()=>archiveA(a.id)}
+                            style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textDim,padding:2,borderRadius:4,transition:"color .12s"}}
+                            onMouseEnter={x=>x.currentTarget.style.color=T.danger}
+                            onMouseLeave={x=>x.currentTarget.style.color=T.textDim}
+                          >✕</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{marginTop:16,padding:14,background:T.bgAlt,border:`1px dashed ${T.borderMid}`,borderRadius:8}}>
+                  <div style={{fontSize:9,letterSpacing:2.5,color:T.textDim,fontFamily:T.mono,marginBottom:11}}>ADD ASSUMPTION</div>
+                  <textarea placeholder="What must be true for this thesis to hold?" value={dA.text} onChange={e=>setDA(d=>({...d,text:e.target.value}))} rows={2} style={I.textarea}/>
+                  <input placeholder="Initial evidence note (optional)" value={dA.evidence} onChange={e=>setDA(d=>({...d,evidence:e.target.value}))} style={{...I.input,marginTop:8}}/>
+                  <div style={{display:"flex",gap:10,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <select value={dA.status} onChange={e=>setDA(d=>({...d,status:e.target.value}))} style={{...I.select,flex:1,minWidth:100}}>{ASSUME_ST.map(s=><option key={s} value={s}>{s}</option>)}</select>
+                    <div style={{flex:1,minWidth:140}}>
+                      <div style={{fontSize:9,letterSpacing:1.5,color:T.textDim,fontFamily:T.mono,marginBottom:4}}>WEIGHT {dA.weight}/5</div>
+                      <input type="range" min={1} max={5} value={dA.weight} onChange={e=>setDA(d=>({...d,weight:Number(e.target.value)}))}/>
+                    </div>
+                    <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.textMid,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      <input type="checkbox" checked={dA.critical} onChange={e=>setDA(d=>({...d,critical:e.target.checked}))}/>Critical
+                    </label>
+                    <button onClick={addAssumption} disabled={!dA.text.trim()} style={{...I.btn,opacity:dA.text.trim()?1:0.3}}>ADD</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tab==="evidence"&&(
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,padding:"8px 12px",background:T.accentBg,border:`1px solid ${T.accentBorder}`,borderRadius:8}}>
+                  <span style={{fontSize:11,color:T.accent}}>ℹ</span>
+                  <span style={{fontSize:11,color:T.textMid,fontFamily:T.mono}}>Manual evidence only — does not mix with AI findings. Metrics are based solely on this log.</span>
+                </div>
+                <Timeline entries={activeE} onArchive={archiveE}/>
+                <div style={{marginTop:20,padding:14,background:T.bgAlt,border:`1px dashed ${T.borderMid}`,borderRadius:8}}>
+                  <div style={{fontSize:9,letterSpacing:2.5,color:T.textDim,fontFamily:T.mono,marginBottom:11}}>LOG EVIDENCE</div>
+                  <textarea placeholder="What did you observe, read, or measure?" value={dE.note} onChange={e=>setDE(d=>({...d,note:e.target.value}))} rows={2} style={I.textarea}/>
+                  <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                    <input type="date" value={dE.date} onChange={e=>setDE(d=>({...d,date:e.target.value}))} style={{...I.input,flex:"0 0 145px"}}/>
+                    <select value={dE.sentiment} onChange={e=>setDE(d=>({...d,sentiment:e.target.value}))} style={{...I.select,flex:1,minWidth:140}}>
+                      <option value="for">Supports thesis</option>
+                      <option value="against">Contradicts thesis</option>
+                    </select>
+                    <button onClick={addEvidence} disabled={!dE.note.trim()} style={{...I.btn,opacity:dE.note.trim()?1:0.3}}>LOG</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {tab==="findings"&&(
+              <div>
+                {findings.length===0?(
+                  <div style={{textAlign:"center",padding:"28px 0",color:T.textDim,fontSize:12,fontFamily:T.mono}}>
+                    No AI findings yet. Run a scan to see balanced FOR/AGAINST analysis.
+                  </div>
+                ):(
+                  <>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,padding:"8px 12px",background:T.bgAlt,border:`1px solid ${T.border}`,borderRadius:8}}>
+                      <span style={{fontSize:11,color:T.textDim}}>✦</span>
+                      <span style={{fontSize:11,color:T.textDim,fontFamily:T.mono}}>AI findings are isolated from conviction metrics. They inform judgment — they don't replace it.</span>
+                    </div>
+                    {findings.map(f=>{
+                      const asm=thesis.assumptions.find(a=>a.id===f.assumptionId);
+                      return <FindingCard key={f.id} finding={f} assumption={asm} checked={false} onToggle={null} showCheckbox={false}/>;
+                    })}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// Inline scan apply panel (inside modal)
+function ScanApplyPanel({result,thesis,onAttemptApply}) {
+  const [sel,setSel]=useState(()=>new Set(result.assumptions.map(a=>a.id)));
+  const toggle=id=>setSel(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;});
+  // FIX: dedup — skip assumptions already applied with same result
+  const existingHashes=new Set((thesis.assistantFindings||[]).map(f=>f.dedupHash));
+  const dedupStatus=result.assumptions.map(a=>({
+    ...a,
+    isDuplicate: existingHashes.has(dedupHash(a.id,result.scanDate,a.suggestedStatus,a.evidenceFor))
+  }));
+  return (
+    <div>
+      <div style={{fontSize:9,letterSpacing:2,color:T.textDim,fontFamily:T.mono,marginBottom:10}}>SELECT CHANGES — FOR/AGAINST/CONTEXT per assumption</div>
+      {dedupStatus.map(a=>{
+        const asm=thesis.assumptions.find(x=>x.id===a.id);
+        return (
+          <div key={a.id}>
+            {a.isDuplicate&&<div style={{fontSize:9,color:T.textDim,fontFamily:T.mono,padding:"3px 12px",background:T.bgAlt,borderRadius:4,marginBottom:4}}>↩ already applied this scan result</div>}
+            <FindingCard finding={a} assumption={asm} checked={sel.has(a.id)&&!a.isDuplicate} onToggle={()=>!a.isDuplicate&&toggle(a.id)}/>
+          </div>
+        );
+      })}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
+        <span style={{fontSize:10,color:T.textDim,fontFamily:T.mono}}>{sel.size} of {result.assumptions.length} selected</span>
+        <button onClick={()=>onAttemptApply(result,sel)} disabled={!sel.size}
+          style={{...I.btn,opacity:sel.size?1:0.3,padding:"8px 16px"}}
+        >APPLY {sel.size} CHANGE{sel.size!==1?"S":""}</button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// MAIN APP
+// ══════════════════════════════════════════════════════════
+
+function ThesisTracker() {
+  const [rawTheses,setRawTheses] = useStorage(STORAGE_KEY,SEED);
+  // Migrate old data on load
+  const theses = useMemo(()=>rawTheses.map(migratThesis),[rawTheses]);
+  const setTheses = useCallback(upd=>{
+    setRawTheses(prev=>{
+      const next=typeof upd==="function"?upd(prev.map(migratThesis)):upd;
+      return next;
+    });
+  },[setRawTheses]);
+
+  const [selectedId,setSelectedId] = useState(null);
+  const [filterCat,setFilterCat]   = useState("All");
+  const [filterSt,setFilterSt]     = useState("All");
+  const [sortBy,setSortBy]         = useState("Score");
+  const [query,setQuery]           = useState("");
+  const [showForm,setShowForm]     = useState(false);
+  const [showArchived,setShowArchived] = useState(false);
+  const [showSettings,setShowSettings] = useState(false);
+  const [apiKey,setApiKeyState]    = useState(getApiKey);
+  const [threshold,setThreshold]   = useState(()=>{
+    try{ return Number(localStorage.getItem(THRESHOLD_KEY)||AUTO_SCAN_DEFAULT); }catch{ return AUTO_SCAN_DEFAULT; }
+  });
+  const fileRef   = useRef(null);
+  const searchRef = useRef(null);
+  const {toasts,push:toastPush,dismiss:toastDismiss} = useToasts();
+
+  // Persist threshold
+  useEffect(()=>{ try{localStorage.setItem(THRESHOLD_KEY,String(threshold));}catch{} },[threshold]);
+
+  const [autoScan,setAutoScan]=useState({status:"idle",total:0,current:null,results:[],errors:0,searchedTopics:[]});
+  const autoScanRef=useRef(false);
+  const abortRef=useRef(false);
+
+  const [draft,setDraft]=useState({title:"",statement:"",category:"Markets",status:"Active",initialConviction:7,createdAt:todayISO()});
+  const selected=theses.find(t=>t.id===selectedId)??null;
+
+  // ── SCAN ENGINE ── (reusable, called by auto-scan and manual trigger)
+  const runScan=useCallback(async(candidates)=>{
+    if (!candidates.length) return;
+    const key=getApiKey();
+    if (!key) { toastPush("Add your Gemini API key in ⚙ Settings to enable scanning",undefined); return; }
+    abortRef.current=false;
+    setAutoScan({status:"running",total:candidates.length,current:candidates[0],results:[],errors:0,searchedTopics:[]});
+    const results=[];
+    let errors=0;
+    const allTopics=[];
+
+    for (let i=0;i<candidates.length;i++) {
+      if (abortRef.current) break;
+      const thesis=candidates[i];
+      setAutoScan(s=>({...s,current:thesis,results:[...results]}));
+      try {
+        const result=await runAIScan(thesis,key);
+        if (result.searchedTopics) allTopics.push(...result.searchedTopics);
+        results.push({thesisId:thesis.id,thesisTitle:thesis.title,thesisCategory:thesis.category,thesis,result,error:null});
+      } catch(e) {
+        results.push({thesisId:thesis.id,thesisTitle:thesis.title,thesisCategory:thesis.category,thesis,result:null,error:e.message||"Failed"});
+        errors++;
+      }
+      markScanned(thesis.id,threshold,0);
+      setAutoScan(s=>({...s,results:[...results],errors,searchedTopics:[...allTopics]}));
+      if (i<candidates.length-1) await new Promise(r=>setTimeout(r,600));
+    }
+    setAutoScan(s=>({...s,status:"done",current:null}));
+  },[threshold,toastPush]);
+
+  // ── AUTO-SCAN ON MOUNT ──
+  useEffect(()=>{
+    if (autoScanRef.current) return;
+    autoScanRef.current=true;
+    setTimeout(()=>{
+      const candidates=theses.filter(t=>
+        !t.archived&&t.status==="Active"&&
+        t.assumptions.filter(a=>!a.archived).length>0&&
+        lastActivityDays(t)>=threshold&&
+        !wasScannedToday(t.id)
+      );
+      if (candidates.length) runScan(candidates);
+    },900);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  // FIX: SCAN NOW button — re-evaluates with current threshold, can re-run
+  const handleManualTrigger=useCallback(()=>{
+    const candidates=theses.filter(t=>
+      !t.archived&&t.status==="Active"&&
+      t.assumptions.filter(a=>!a.archived).length>0&&
+      lastActivityDays(t)>=threshold
+    );
+    if (!candidates.length) {
+      toastPush(`No theses inactive ≥${threshold} days to scan`,undefined);
+      return;
+    }
+    runScan(candidates);
+  },[theses,threshold,runScan,toastPush]);
+
+  // ── KEYBOARD ──
+  useEffect(()=>{
+    const h=e=>{
+      if (selectedId) return;
+      if (e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.tagName==="SELECT") return;
+      if (e.key==="n"||e.key==="N"){ e.preventDefault(); setShowForm(v=>!v); }
+      if (e.key==="/"){ e.preventDefault(); searchRef.current?.focus(); }
+    };
+    document.addEventListener("keydown",h);
+    return()=>document.removeEventListener("keydown",h);
+  },[selectedId]);
+
+  const updateThesis=useCallback(upd=>{
+    setTheses(prev=>prev.map(t=>t.id===upd.id?upd:t));
+    setSelectedId(upd.id);
+  },[setTheses]);
+
+  const addThesis=()=>{
+    if (!draft.title.trim()||!draft.statement.trim()) return;
+    const t={id:genId(),archived:false,starred:false,lastTouchedAt:todayISO(),assistantFindings:[],...draft,title:draft.title.trim(),statement:draft.statement.trim(),assumptions:[],evidenceLog:[]};
+    setTheses(prev=>[t,...prev]);
+    setSelectedId(t.id); setShowForm(false);
+    setDraft({title:"",statement:"",category:"Markets",status:"Active",initialConviction:7,createdAt:todayISO()});
+  };
+
+  const archiveThesis=(id,e)=>{
+    e.stopPropagation();
+    const t=theses.find(x=>x.id===id); if (!t) return;
+    setTheses(prev=>prev.map(x=>x.id===id?{...x,archived:true}:x));
+    if (selectedId===id) setSelectedId(null);
+    toastPush(`"${t.title}" archived`,()=>setTheses(prev=>prev.map(x=>x.id===id?{...x,archived:false}:x)));
+  };
+
+  const toggleStar=(id,e)=>{
+    e.stopPropagation();
+    setTheses(prev=>prev.map(x=>x.id===id?{...x,starred:!x.starred,lastTouchedAt:todayISO()}:x));
+  };
+
+  const importJson=async(file)=>{
+    try{
+      const parsed=JSON.parse(await file.text());
+      if (!validateImport(parsed)){toastPush("Import failed — invalid format",undefined);return;}
+      setTheses(parsed.map(migratThesis)); setSelectedId(null);
+      toastPush(`Imported ${parsed.length} theses`,undefined);
+    }catch{toastPush("Import failed — parse error",undefined);}
+  };
+
+  // FIX: apply auto-scan result — findings go to assistantFindings, not evidenceLog
+  const applyAutoScanResult=useCallback((thesisId,result,checkedIds)=>{
+    setTheses(prev=>prev.map(t=>{
+      if (t.id!==thesisId) return t;
+      const existingHashes=new Set((t.assistantFindings||[]).map(f=>f.dedupHash));
+      const newFindings=[];
+      result.assumptions.forEach(r=>{
+        if (!checkedIds.has(r.id)) return;
+        const hash=dedupHash(r.id,result.scanDate,r.suggestedStatus,r.evidenceFor);
+        if (existingHashes.has(hash)) return;
+        newFindings.push({
+          id:genId(),scanDate:result.scanDate,assumptionId:r.id,
+          suggestedStatus:r.suggestedStatus,evidenceFor:r.evidenceFor,
+          evidenceAgainst:r.evidenceAgainst,neutral:r.neutral||"",
+          thesisSentiment:r.thesisSentiment,confidence:r.confidence||"medium",
+          dedupHash:hash,applied:true,
+        });
+      });
+      const updatedAssumptions=t.assumptions.map(a=>{
+        const r=result.assumptions.find(x=>x.id===a.id);
+        if (!r||!checkedIds.has(a.id)) return a;
+        return {...a,status:r.suggestedStatus};
+      });
+      return {...t,lastTouchedAt:todayISO(),assumptions:updatedAssumptions,assistantFindings:[...(t.assistantFindings||[]),...newFindings]};
+    }));
+    const t=theses.find(x=>x.id===thesisId);
+    toastPush(`Applied to "${t?.title||"thesis"}" — ${checkedIds.size} change${checkedIds.size!==1?"s":""}`,undefined);
+  },[setTheses,toastPush,theses]);
+
+  const dismissAutoScan=useCallback(()=>{
+    abortRef.current=true;
+    setAutoScan({status:"idle",total:0,current:null,results:[],errors:0,searchedTopics:[]});
+  },[]);
+
+  const visible=useMemo(()=>{
+    const q=query.toLowerCase();
+    const rows=theses
+      .filter(t=>t.archived===showArchived)
+      .filter(t=>`${t.title} ${t.statement}`.toLowerCase().includes(q)&&(filterCat==="All"||t.category===filterCat)&&(filterSt==="All"||t.status===filterSt))
+      .map(t=>({t,cv:computeConviction(t),stale:lastActivityDays(t)}));
+    switch(sortBy){
+      case "Score":  return [...rows].sort((a,b)=>(b.cv.score??-1)-(a.cv.score??-1));
+      case "Newest": return [...rows].sort((a,b)=>b.t.createdAt.localeCompare(a.t.createdAt));
+      case "Oldest": return [...rows].sort((a,b)=>a.t.createdAt.localeCompare(b.t.createdAt));
+      case "Title":  return [...rows].sort((a,b)=>a.t.title.localeCompare(b.t.title));
+      case "Stale":  return [...rows].sort((a,b)=>b.stale-a.stale);
+      default: return rows;
+    }
+  },[theses,showArchived,query,filterCat,filterSt,sortBy]);
+
+  const stats=useMemo(()=>{
+    const live=theses.filter(t=>!t.archived);
+    const scores=live.map(t=>computeConviction(t).score).filter(s=>s!==null);
+    return {
+      active:live.filter(t=>t.status==="Active").length,
+      confirmed:live.filter(t=>t.status==="Confirmed").length,
+      invalidated:live.filter(t=>t.status==="Invalidated").length,
+      archived:theses.filter(t=>t.archived).length,
+      avg:scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length):null,
+      staleCount:live.filter(t=>lastActivityDays(t)>=threshold).length,
+    };
+  },[theses,threshold]);
+
+  const bannerVisible=autoScan.status!=="idle";
+  const openSettings=useCallback(()=>setShowSettings(true),[]);
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,fontFamily:T.mono,color:T.text,paddingTop:bannerVisible?52:0,transition:"padding-top .2s"}}>
+      <style>{CSS}</style>
+
+      <AutoScanBanner state={autoScan} onDismiss={dismissAutoScan}/>
+
+      {/* SETTINGS MODAL */}
+      {showSettings&&<SettingsModal onClose={()=>{setShowSettings(false);setApiKeyState(getApiKey());}}/>}
+
+      {/* HEADER */}
+      <header style={{background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:bannerVisible?52:0,zIndex:20,boxShadow:"0 1px 8px rgba(0,0,0,0.06)",transition:"top .2s"}}>
+        <div style={{maxWidth:1220,margin:"0 auto",padding:"14px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div>
+                <div style={{fontSize:8,letterSpacing:5,color:T.textDim,marginBottom:3}}>PERSONAL INTELLIGENCE SYSTEM</div>
+                <h1 style={{fontFamily:T.serif,fontSize:28,fontWeight:900,color:T.text,letterSpacing:-0.8,lineHeight:1}}>
+                  THESIS <span style={{fontStyle:"italic",fontWeight:300,color:T.textMid}}>TRACKER</span>
+                </h1>
+              </div>
+              {/* AI engine badge */}
+              <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 8px",background:apiKey?T.accentBg:T.warnBg,border:`1px solid ${apiKey?T.accentBorder:T.warnBorder}`,borderRadius:6,marginTop:2}}>
+                <span style={{fontSize:8,letterSpacing:1.5,color:apiKey?T.accent:T.warn,fontFamily:T.mono,whiteSpace:"nowrap"}}>
+                  {apiKey?"✦ GEMINI 2.5":"⚠ NO KEY"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:9,color:T.textDim,fontFamily:T.mono,marginRight:4}}>
+              <kbd style={{background:T.bgAlt,border:`1px solid ${T.border}`,borderRadius:4,padding:"1px 5px",fontSize:9}}>N</kbd> new &nbsp;
+              <kbd style={{background:T.bgAlt,border:`1px solid ${T.border}`,borderRadius:4,padding:"1px 5px",fontSize:9}}>/</kbd> search
+            </span>
+            {/* Settings button — prominent when no API key */}
+            <button onClick={openSettings}
+              style={{...I.btnGhost,color:apiKey?T.textMid:T.warn,borderColor:apiKey?T.border:"rgba(176,120,0,0.35)",padding:"8px 12px"}}
+              title="AI Engine Settings"
+            >⚙{!apiKey&&" SETUP"}</button>
+            <button onClick={()=>exportJson(theses)} style={I.btnGhost}>EXPORT</button>
+            <button onClick={()=>fileRef.current?.click()} style={I.btnGhost}>IMPORT</button>
+            <input ref={fileRef} type="file" accept="application/json" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)void importJson(f);e.currentTarget.value="";}}/>
+            <button onClick={()=>setShowArchived(v=>!v)} style={{...I.btnGhost,color:showArchived?T.warn:T.textMid,borderColor:showArchived?"rgba(176,120,0,0.3)":T.border}}>
+              {showArchived?"← ACTIVE":"ARCHIVED"}{stats.archived>0&&` (${stats.archived})`}
+            </button>
+            <button onClick={()=>setShowForm(v=>!v)} style={{...I.btn,padding:"9px 18px"}}>{showForm?"CANCEL":"+ NEW THESIS"}</button>
+          </div>
+        </div>
+      </header>
+
+      <div style={{maxWidth:1220,margin:"0 auto",padding:"20px 24px 60px"}}>
+
+        {/* KPI ROW */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:12}}>
+          <KpiCard value={stats.active} label="Active"/>
+          <KpiCard value={stats.confirmed} label="Confirmed" color={T.accent}/>
+          <KpiCard value={stats.invalidated} label="Invalidated" color={T.danger}/>
+          <KpiCard value={stats.avg!==null?`${stats.avg}%`:"—"} label="Avg Score" color={scoreColor(stats.avg)} hint="manual evidence only"/>
+          <KpiCard value={stats.staleCount} label="Stale" color={stats.staleCount>0?T.warn:T.textDim} hint={`≥${threshold}d no touch`} sub={stats.staleCount>0?{text:"will auto-scan",color:T.warn}:null}/>
+        </div>
+
+        <div style={{marginBottom:12}}><PortfolioHealthBar theses={theses}/></div>
+
+        {/* AUTO-SCAN DRAWER */}
+        <AutoScanResultsDrawer
+          state={autoScan}
+          onApply={applyAutoScanResult}
+          onDismissAll={dismissAutoScan}
+          threshold={threshold}
+          setThreshold={setThreshold}
+          onManualTrigger={handleManualTrigger}
+        />
+
+        {/* NEW THESIS FORM */}
+        {showForm&&(
+          <div className="up" style={{padding:20,background:T.surface,border:`1px solid ${T.accentBorder}`,borderRadius:12,marginBottom:16,boxShadow:T.shadow}}>
+            <div style={{fontSize:9,letterSpacing:3,color:T.accent,fontFamily:T.mono,marginBottom:14}}>NEW THESIS</div>
+            <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr",gap:12,marginBottom:10}}>
+              <input placeholder="Title *" value={draft.title} onChange={e=>setDraft(d=>({...d,title:e.target.value}))} style={I.input} autoFocus/>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <select value={draft.category} onChange={e=>setDraft(d=>({...d,category:e.target.value}))} style={I.select}>{CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}</select>
+                <select value={draft.status} onChange={e=>setDraft(d=>({...d,status:e.target.value}))} style={I.select}>{THESIS_ST.map(s=><option key={s} value={s}>{s}</option>)}</select>
+                <input type="date" value={draft.createdAt} onChange={e=>setDraft(d=>({...d,createdAt:e.target.value}))} style={I.input}/>
+              </div>
+            </div>
+            <textarea placeholder="What do you believe? Why? What would falsify it? *" value={draft.statement} onChange={e=>setDraft(d=>({...d,statement:e.target.value}))} rows={3} style={{...I.textarea,marginBottom:12}}/>
+            <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{fontSize:9,letterSpacing:2,color:T.textDim,fontFamily:T.mono,marginBottom:5}}>INITIAL CONVICTION <span style={{color:T.text,marginLeft:4}}>{draft.initialConviction}/10</span></div>
+                <input type="range" min={1} max={10} value={draft.initialConviction} onChange={e=>setDraft(d=>({...d,initialConviction:Number(e.target.value)}))} style={{maxWidth:220}}/>
+              </div>
+              <button onClick={addThesis} disabled={!draft.title.trim()||!draft.statement.trim()} style={{...I.btn,opacity:(draft.title.trim()&&draft.statement.trim())?1:0.3,padding:"10px 24px"}}>CREATE THESIS</button>
+            </div>
+          </div>
+        )}
+
+        {/* FILTERS */}
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"10px 14px",marginBottom:12,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",boxShadow:T.shadow}}>
+          <div style={{position:"relative",flex:1,minWidth:200}}>
+            <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.textDim,fontSize:14,pointerEvents:"none"}}>⌕</span>
+            <input ref={searchRef} placeholder="Search theses…" value={query} onChange={e=>setQuery(e.target.value)} style={{...I.input,paddingLeft:32}}/>
+          </div>
+          <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={I.select}>
+            <option value="All">All categories</option>
+            {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={filterSt} onChange={e=>setFilterSt(e.target.value)} style={I.select}>
+            <option value="All">All statuses</option>
+            {THESIS_ST.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={I.select}>
+            {SORT_OPTS.map(s=><option key={s} value={s}>Sort: {s}</option>)}
+          </select>
+          <span style={{fontSize:10,color:T.textDim,minWidth:52,textAlign:"right"}}>{visible.length} shown</span>
+        </div>
+
+        {/* TABLE HEADER */}
+        <div style={{display:"grid",gridTemplateColumns:"24px 1fr 104px 112px 190px 52px 20px",gap:12,padding:"8px 12px 7px",fontSize:8,letterSpacing:2.5,color:T.textDim}}>
+          <span/><span>THESIS</span><span>CATEGORY</span><span>STATUS</span><span>CONVICTION</span><span style={{textAlign:"center"}}>GAUGE</span><span/>
+        </div>
+
+        {visible.length===0&&(
+          <div style={{textAlign:"center",padding:"60px 0",color:T.textDim}}>
+            {showArchived?<span style={{fontSize:13,fontFamily:T.mono}}>No archived theses.</span>:(
+              <div>
+                <div style={{fontFamily:T.serif,fontSize:22,fontWeight:700,color:T.textMid,marginBottom:8}}>No theses yet.</div>
+                <p style={{fontSize:13,color:T.textDim,marginBottom:16}}>Every strong portfolio starts with a documented belief.</p>
+                <button onClick={()=>setShowForm(true)} style={{...I.btn,padding:"10px 24px"}}>+ ADD YOUR FIRST THESIS</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {visible.map(({t,cv,stale},i)=>{
+          const catC=CAT_META[t.category];
+          const sm=STATUS_META[t.status];
+          const findingCount=(t.assistantFindings||[]).filter(f=>f.applied).length;
+          return (
+            <div key={t.id} className="card up" onClick={()=>setSelectedId(t.id)}
+              style={{display:"grid",gridTemplateColumns:"24px 1fr 104px 112px 190px 52px 20px",gap:12,padding:"14px 12px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,marginBottom:6,boxShadow:T.shadow,animationDelay:`${i*.025}s`,borderLeft:`3px solid ${catC.accent}`}}
+            >
+              <button onClick={e=>toggleStar(t.id,e)}
+                style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:0,lineHeight:1,alignSelf:"flex-start",marginTop:2,color:t.starred?"#f0b429":T.textDim,transition:"color .12s"}}
+                title={t.starred?"Remove star":"Star this thesis"}
+              >{t.starred?"★":"☆"}</button>
+              <div style={{minWidth:0}}>
+                <div style={{fontFamily:T.serif,fontSize:15,fontWeight:700,color:T.text,lineHeight:1.3,marginBottom:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{t.title}</div>
+                <div style={{fontSize:11,color:T.textMid,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:1,WebkitBoxOrient:"vertical"}}>{t.statement}</div>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5,flexWrap:"wrap"}}>
+                  <span style={{fontSize:9,color:T.textDim,letterSpacing:0.3}}>
+                    {t.assumptions.filter(a=>!a.archived).length} asmpt · {t.evidenceLog.filter(e=>!e.archived).length} manual ev
+                    {findingCount>0&&<span style={{color:T.accent}}> · {findingCount} AI</span>}
+                    {" · "}{ageLabel(daysOld(t.createdAt))} old
+                  </span>
+                  {stale>=threshold&&<StaleBadge days={stale}/>}
+                </div>
+              </div>
+              <div style={{paddingTop:2}}><Pill label={t.category.toUpperCase()} color={catC.accent} bg={catC.bg} border={catC.border}/></div>
+              <div style={{paddingTop:2}}><Pill label={t.status.toUpperCase()} color={sm.color} bg={sm.bg} border={sm.border}/></div>
+              <div style={{paddingTop:3}}><ConvictionBar cv={cv} compact/></div>
+              <div style={{display:"flex",justifyContent:"center",paddingTop:1}}><Ring score={cv.score} accent={catC.accent} size={48}/></div>
+              <button className="del" onClick={e=>archiveThesis(t.id,e)}
+                style={{background:"none",border:"none",cursor:"pointer",fontSize:11,color:T.textDim,padding:2,alignSelf:"flex-start",marginTop:3,borderRadius:4,transition:"color .12s"}}
+                onMouseEnter={e=>e.currentTarget.style.color=T.danger}
+                onMouseLeave={e=>e.currentTarget.style.color=T.textDim}
+              >✕</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {selected&&<ThesisModal thesis={selected} onUpdate={updateThesis} onClose={()=>setSelectedId(null)} toastPush={toastPush} setTheses={setTheses} onOpenSettings={openSettings}/>}
+
+      <div style={{position:"fixed",bottom:18,right:18,display:"flex",flexDirection:"column",gap:8,zIndex:300}}>
+        {toasts.map(toast=>(
+          <div key={toast.id} className="slideR"
+            style={{padding:"11px 14px",background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,display:"flex",alignItems:"center",gap:12,minWidth:276,boxShadow:T.shadowMd}}
+          >
+            <span style={{fontSize:12,color:T.textMid,flex:1}}>{toast.label}</span>
+            {toast.undoFn&&<button onClick={()=>{toast.undoFn();toastDismiss(toast.id);}} style={{background:"none",border:"none",color:T.accent,fontSize:11,fontFamily:T.mono,cursor:"pointer",letterSpacing:0.5,fontWeight:700}}>UNDO</button>}
+            <button onClick={()=>toastDismiss(toast.id)} style={{background:"none",border:"none",color:T.textDim,cursor:"pointer",fontSize:11}}>✕</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<ThesisTracker />);
+  </script>
+</body>
+</html>
